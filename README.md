@@ -378,7 +378,7 @@ spec:
       - two-tier-app
   endpoints:
   - port: http
-````
+```
 
 # Apply ServiceMonitor to bridge App and Prometheus
 
@@ -397,7 +397,7 @@ docker run -d --name minio -p 9000:9000 -p 9001:9001 \
 # Create Bucket
 docker exec -it minio mc alias set myminio http://localhost:9000 minioadmin minioadmin
 docker exec -it minio mc mb myminio/velero
-````
+```
 
 ```bash
 # Credentials file
@@ -406,11 +406,18 @@ cat <<EOF > credentials-velero
 aws_access_key_id = minioadmin
 aws_secret_access_key = minioadmin
 EOF
+```
 
+# Add Helm Chart
+
+```bash
 helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts
 helm repo update
+```
 
 # Install Velero
+
+```bash
 helm upgrade --install velero vmware-tanzu/velero \
   --namespace velero --create-namespace \
   --set "configuration.backupStorageLocation[0].name=default" \
