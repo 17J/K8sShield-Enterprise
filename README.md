@@ -9,7 +9,7 @@
   ```bash
   sudo apt update
   sudo apt install docker.io -y
-  sudo usermod -aG docker $USER   # Logout-login karo ya new terminal kholo
+  sudo usermod -aG docker $USER  && newgrp docker
   ```
 
 - **macOS (Docker Desktop):**
@@ -131,9 +131,8 @@ kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.
 
 **Nginx (Frontend)** and **Redis (Backend)** deployment phase
 
-Save yeh sab ek file `app.yaml` mein aur apply karo.
-
 ```yaml
+# Save in app.yml
 # 1. Namespace: Logical isolation for the entire application stack
 apiVersion: v1
 kind: Namespace
@@ -335,10 +334,10 @@ kubectl apply -f app.yaml
 ### Phase 4: Security & Connection Testing
 
 ```bash
-# Pod name export karo
+# Pod Name Export
 export NIC_POD=$(kubectl get pod -l app=nginx -n two-tier-app -o jsonpath='{.items[0].metadata.name}')
 
-# Alpine image use kar rahe hain, isliye curl install karo
+# Alpine image uses to install curl
 kubectl exec -it $NIC_POD -n two-tier-app -- apk add curl
 
 # 1. Test Redis Connection (ALLOWED)
@@ -353,15 +352,39 @@ kubectl exec -it $NIC_POD -n two-tier-app -- sh -c "curl -k -H \"Authorization: 
 
 ### Phase 5: Monitoring (Observability)
 
-```bash
+````bash
 helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
   --namespace monitoring --create-namespace \
   --set grafana.adminPassword=admin \
   --set grafana.service.port=3000
 
+
+```yml
+# nginx-servicemonitor.yml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nginx-sm
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+  namespaceSelector:
+    any: false
+    matchNames:
+      - two-tier-app
+  endpoints:
+  - port: http
+````
+
 # Apply ServiceMonitor to bridge App and Prometheus
-kubectl apply -f nginx-servicemonitor.yaml  # (Apna ServiceMonitor file bana lo for nginx metrics)
-```
+
+kubectl apply -f nginx-servicemonitor.yml
+
+````
 
 ### Phase 6: Backup & Disaster Recovery (Velero + Minio)
 
@@ -374,7 +397,7 @@ docker run -d --name minio -p 9000:9000 -p 9001:9001 \
 # Create Bucket
 docker exec -it minio mc alias set myminio http://localhost:9000 minioadmin minioadmin
 docker exec -it minio mc mb myminio/velero
-```
+````
 
 ```bash
 # Credentials file
@@ -405,7 +428,7 @@ helm upgrade --install velero vmware-tanzu/velero \
 ```
 
 ```bash
-# Backup & Restore Test
+# Backup & Restore testing
 velero backup-location get
 velero backup create my-k8s-backup --include-namespaces two-tier-app
 kubectl delete namespace two-tier-app  # Simulate disaster
