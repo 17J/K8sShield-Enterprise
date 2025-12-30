@@ -428,7 +428,7 @@ helm upgrade --install velero vmware-tanzu/velero \
 ```
 
 ```bash
-# Backup & Restore Test
+# Backup & Restore testing
 velero backup-location get
 velero backup create my-k8s-backup --include-namespaces two-tier-app
 kubectl delete namespace two-tier-app  # Simulate disaster
