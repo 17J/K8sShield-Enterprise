@@ -10,7 +10,7 @@ NC='\033[0m'
 
 CLUSTER_NAME="kubesafe-demo"
 APP_NAMESPACE="two-tier-app"
-# FIX: Host port 9005 use kar rahe hain kyunki 9000 pe SonarQube hai
+# FIX: Port 9005 taaki SonarQube (9000) se ladai na ho
 MINIO_PORT=9005 
 MINIO_CONSOLE=9001
 MINIO_USER="minioadmin"
@@ -18,13 +18,13 @@ MINIO_PASS="minioadmin"
 VELERO_BUCKET="velero"
 VELERO_NS="velero"
 
-# BEST FIX for Kind: Use Docker's default gateway IP for MinIO communication
+# BEST FIX for Kind: Docker gateway IP for MinIO-to-Kubernetes communication
 DOCKER_GATEWAY_IP=$(docker network inspect bridge -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
 
 echo -e "${GREEN}=== KubeSafe Backup Setup (MinIO + Velero) ===${NC}"
 echo "MinIO API: http://localhost:$MINIO_PORT (SonarQube safe)"
 
-# --- VELERO CLI INSTALLATION ---
+# --- STEP 0: VELERO CLI INSTALLATION ---
 if ! command -v velero >/dev/null 2>&1; then
     echo -e "${YELLOW}Velero CLI not found. Installing latest version...${NC}"
     VELERO_VERSION=$(curl -s https://api.github.com/repos/vmware-tanzu/velero/releases/latest | grep tag_name | cut -d '"' -f 4)
@@ -35,10 +35,10 @@ if ! command -v velero >/dev/null 2>&1; then
     echo -e "${GREEN}Velero CLI installed successfully!${NC}"
 fi
 
-# Step 1: MinIO Start (Force recreate to fix port conflicts)
+# --- STEP 1: MINIO SETUP (Docker) ---
 echo -e "${YELLOW}Step 1: Starting MinIO (Docker)...${NC}"
 if docker ps -a --format '{{.Names}}' | grep -q "^minio$"; then
-    echo "Removing old MinIO container to update ports..."
+    echo "Refreshing MinIO container..."
     docker rm -f minio
 fi
 
@@ -48,25 +48,30 @@ docker run -d --name minio \
     -e "MINIO_ROOT_PASSWORD=$MINIO_PASS" \
     minio/minio server /data --console-address ":9001"
 
-echo "Waiting for MinIO..."
+echo "Waiting for MinIO to warm up..."
 sleep 5
 
-# Create Bucket (Internal container communication uses 9000)
+# Create Bucket using MinIO Client (mc) inside container
 docker exec minio mc alias set myminio http://localhost:9000 $MINIO_USER $MINIO_PASS || true
 docker exec minio mc mb myminio/$VELERO_BUCKET || true
 
-# Step 2: Credentials
+# --- STEP 2: CREDENTIALS ---
 cat <<EOF > credentials-velero
 [default]
 aws_access_key_id = $MINIO_USER
 aws_secret_access_key = $MINIO_PASS
 EOF
 
-# Step 3: Velero Install
-echo -e "${YELLOW}Step 3: Installing Velero Server (Helm)...${NC}"
+# --- STEP 3: VELERO INSTALL (Helm) ---
+echo -e "${YELLOW}Step 3: Installing Velero Server...${NC}"
 helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts || true
 helm repo update
 
+# Pre-installing CRDs to prevent timeout issues
+echo "Applying Velero CRDs..."
+kubectl apply -f https://raw.githubusercontent.com/vmware-tanzu/velero/main/config/crd/v1/bases/velero.io_backups.yaml || true
+
+# Helm install without --wait to avoid "context deadline exceeded"
 helm upgrade --install velero vmware-tanzu/velero \
   --namespace $VELERO_NS --create-namespace \
   --set "configuration.backupStorageLocation[0].name=default" \
@@ -80,16 +85,27 @@ helm upgrade --install velero vmware-tanzu/velero \
   --set "initContainers[0].name=velero-plugin-for-aws" \
   --set "initContainers[0].image=velero/velero-plugin-for-aws:v1.10.0" \
   --set "initContainers[0].volumeMounts[0].mountPath=/target" \
-  --set "initContainers[0].volumeMounts[0].name=plugins" \
-  --wait --timeout=300s
+  --set "initContainers[0].volumeMounts[0].name=plugins"
 
-# Step 4: Verification
-echo -e "${GREEN}Verifying Backup Location Status...${NC}"
-sleep 10
+echo -e "${YELLOW}Waiting for Velero Pod to be ready...${NC}"
+kubectl wait --namespace $VELERO_NS \
+  --for=condition=ready pod \
+  --selector=component=velero \
+  --timeout=600s
+
+# --- STEP 4: VERIFICATION ---
+echo -e "${GREEN}Verifying Backup Storage Location...${NC}"
+sleep 15
 kubectl get backupstoragelocation -n $VELERO_NS
 
-echo -e "${YELLOW}Step 5: Testing Backup of $APP_NAMESPACE...${NC}"
+# --- STEP 5: TEST BACKUP ---
+echo -e "${YELLOW}Step 5: Testing Backup of namespace: $APP_NAMESPACE...${NC}"
+# Delete old test backup if exists
 velero backup delete my-k8s-backup --confirm || true
+
 velero backup create my-k8s-backup --include-namespaces $APP_NAMESPACE --wait
 
-echo -e "${GREEN}✅ Backup created. Ready for disaster simulation!${NC}"
+echo -e "${GREEN}====================================${NC}"
+echo "✅ SUCCESS: Velero is ready and Backup is created!"
+echo "MinIO Console: http://localhost:$MINIO_CONSOLE"
+echo -e "${GREEN}====================================${NC}"
