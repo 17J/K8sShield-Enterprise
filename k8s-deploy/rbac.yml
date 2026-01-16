@@ -1,0 +1,40 @@
+#  Namespace: Logical isolation for the entire application stack
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: two-tier-app
+---
+#  ServiceAccount: Provides a dedicated identity for the Nginx pod
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nginx-sa
+  namespace: two-tier-app
+---
+#  RBAC Role: Defines specific permissions (ReadOnly access to Pods and Services)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nginx-role
+  namespace: two-tier-app
+rules:
+  - apiGroups: [""]
+    resources: ["services", "pods"]
+    verbs: ["get", "list"]
+---
+#  RoleBinding: Grants the defined Role permissions to the Nginx ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nginx-rb
+  namespace: two-tier-app
+subjects:
+  - kind: ServiceAccount
+    name: nginx-sa
+    namespace: two-tier-app
+roleRef:
+  kind: Role
+  name: nginx-role
+  apiGroup: rbac.authorization.k8s.io
+---
+

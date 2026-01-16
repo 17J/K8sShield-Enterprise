@@ -1,0 +1,35 @@
+# Redis Backend Deployment: Database/Cache layer for the application
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: two-tier-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis # Target label for NetPol and Monitoring
+    spec:
+      containers:
+        - name: redis
+          image: redis:alpine
+          ports:
+            - containerPort: 6379
+---
+# Redis Service: Internal service to expose the Redis database
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: two-tier-app
+spec:
+  selector:
+    app: redis
+  ports:
+    - name: redis-port
+      port: 6379
+      targetPort: 6379

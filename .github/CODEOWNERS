@@ -1,0 +1,11 @@
+<!-- # CODEOWNERS - Automatic code review assignments
+# Documentation: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Protect the CODEOWNERS file itself
+.github/CODEOWNERS @17J
+
+# Default owners for everything
+* @17J 
+
+# Documentation
+README.md @17J -->

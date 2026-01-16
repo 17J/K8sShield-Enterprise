@@ -1,0 +1,36 @@
+#  Nginx Frontend Deployment: Web server layer configured with RBAC identity
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: two-tier-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      serviceAccountName: nginx-sa # Attaching RBAC ServiceAccount
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+---
+#  Nginx Service: Exposes Frontend with named port 'http' for Prometheus scraping
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  namespace: two-tier-app
+spec:
+  selector:
+    app: nginx
+  ports:
+    - name: http # Port name required for Prometheus ServiceMonitor
+      port: 80
+      targetPort: 80

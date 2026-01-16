@@ -1,0 +1,61 @@
+# Network Policy (Default Deny): Implements Zero-Trust by blocking all traffic by default
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: two-tier-app
+spec:
+  podSelector: {} # Targets all pods in this namespace
+  policyTypes: [Ingress, Egress]
+---
+# NetPol (Allow Ingress): Permits traffic only from the Ingress Controller to Nginx
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-nginx
+  namespace: two-tier-app
+spec:
+  podSelector:
+    matchLabels:
+      app: nginx
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+---
+#  NetPol (App Isolation): Allows Nginx to communicate with Redis on specific port
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-nginx-to-redis
+  namespace: two-tier-app
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: nginx # Only traffic from pods labeled 'app: nginx' is allowed
+      ports:
+        - protocol: TCP
+          port: 6379
+---
+#  NetPol (DNS Access): Permits pods to perform DNS lookups via CoreDNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: two-tier-app
+spec:
+  podSelector: {}
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
