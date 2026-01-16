@@ -1,0 +1,18 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nginx-sm
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+  namespaceSelector:
+    any: false
+    matchNames:
+      - two-tier-app
+  endpoints:
+    - port: http

@@ -1,4 +1,4 @@
-# 🏗️ KubeSafe-Core: End-to-End Secure Kubernetes Stack
+# 🏗️ K8sShield-Enterprise: End-to-End Secure Kubernetes Stack
 
 ## 📋 Prerequisites
 
@@ -12,27 +12,16 @@
   sudo usermod -aG docker $USER  && newgrp docker
   ```
 
-- **macOS (Docker Desktop):**
-  Download from: https://www.docker.com/products/docker-desktop/
-
-- **Windows (Docker Desktop with WSL2):**
-  Download from: https://www.docker.com/products/docker-desktop/
-
-> Verify: `docker --version`
-
 ### 2. Kind (Kubernetes IN Docker)
 
 Local Kubernetes cluster
 
-```bash
+````bash
 # Linux/macOS/Windows (with curl)
 curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64   # macOS: darwin-amd64, Windows: windows-amd64
 chmod +x ./kind
 sudo mv ./kind /usr/local/bin/kind
 
-# Ya directly brew se (macOS)
-# brew install kind
-```
 
 > Verify: `kind version`
 
@@ -44,13 +33,6 @@ curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stabl
 chmod +x kubectl
 sudo mv kubectl /usr/local/bin/
 
-# macOS
-# brew install kubectl
-
-# Windows (PowerShell)
-curl -LO "https://dl.k8s.io/release/v1.31.0/bin/windows/amd64/kubectl.exe"
-# Move to a folder in PATH
-```
 
 > Verify: `kubectl version --client`
 
@@ -62,7 +44,7 @@ Package manager for Kubernetes.
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
 # Ya macOS: brew install helm
-```
+````
 
 > Verify: `helm version`
 
