@@ -48,8 +48,10 @@ nodes:
     protocol: TCP
 EOF
 
+
 echo -e "${GREEN}Cluster created.${NC}"
 kubectl cluster-info --context kind-"$CLUSTER_NAME"
+sleep 90s
 
 echo -e "${YELLOW}Installing Calico (v3.31.3 manifests)...${NC}"
 kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.3/manifests/tigera-operator.yaml
