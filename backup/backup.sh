@@ -8,58 +8,72 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-CLUSTER_NAME="kubesafe-demo"          # Change if different
-APP_NAMESPACE="two-tier-app"          # Your app namespace (from earlier)
+CLUSTER_NAME="kubesafe-demo"
+APP_NAMESPACE="two-tier-app"
 MINIO_PORT=9000
 MINIO_CONSOLE=9001
 MINIO_USER="minioadmin"
 MINIO_PASS="minioadmin"
 VELERO_BUCKET="velero"
 VELERO_NS="velero"
-HOST_IP=$(hostname -I | awk '{print $1}')  # Kind host IP (usually works)
 
-echo -e "${GREEN}=== KubeSafe Backup Setup Script (MinIO + Velero) ===${NC}"
-echo "MinIO: http://$HOST_IP:$MINIO_PORT"
-echo "Bucket: $VELERO_BUCKET"
-echo "App NS to backup: $APP_NAMESPACE"
-echo ""
+# BEST FIX for Kind: Use Docker's default gateway IP for MinIO communication
+DOCKER_GATEWAY_IP=$(docker network inspect bridge -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
 
-# Check prereqs
-command -v docker >/dev/null 2>&1 || { echo -e "${RED}Docker not found${NC}"; exit 1; }
-command -v helm >/dev/null 2>&1 || { echo -e "${RED}Helm not found${NC}"; exit 1; }
-command -v kubectl >/dev/null 2>&1 || { echo -e "${RED}kubectl not found${NC}"; exit 1; }
-kubectl config current-context | grep -q "kind-$CLUSTER_NAME" || { echo -e "${RED}Not in Kind cluster context${NC}"; exit 1; }
+echo -e "${GREEN}=== KubeSafe Backup Setup (MinIO + Velero) ===${NC}"
 
-echo -e "${YELLOW}Step 1: Starting MinIO (Docker)...${NC}"
-if docker ps -q -f name=minio >/dev/null; then
-  echo "MinIO already running."
+# --- NAYA SECTION: VELERO CLI INSTALLATION ---
+if ! command -v velero >/dev/null 2>&1; then
+    echo -e "${YELLOW}Velero CLI not found. Installing latest version...${NC}"
+    
+    # Get latest version tag from GitHub
+    VELERO_VERSION=$(curl -s https://api.github.com/repos/vmware-tanzu/velero/releases/latest | grep tag_name | cut -d '"' -f 4)
+    echo "Downloading Velero $VELERO_VERSION..."
+    
+    # Download, Extract and Install
+    curl -LO "https://github.com/vmware-tanzu/velero/releases/download/${VELERO_VERSION}/velero-${VELERO_VERSION}-linux-amd64.tar.gz"
+    tar -xvf "velero-${VELERO_VERSION}-linux-amd64.tar.gz"
+    sudo mv "velero-${VELERO_VERSION}-linux-amd64/velero" /usr/local/bin/
+    
+    # Cleanup
+    rm -rf "velero-${VELERO_VERSION}-linux-amd64" "velero-${VELERO_VERSION}-linux-amd64.tar.gz"
+    echo -e "${GREEN}Velero CLI installed successfully!${NC}"
 else
-  docker run -d --name minio \
-    -p $MINIO_PORT:9000 -p $MINIO_CONSOLE:$MINIO_CONSOLE \
-    -e "MINIO_ROOT_USER=$MINIO_USER" \
-    -e "MINIO_ROOT_PASSWORD=$MINIO_PASS" \
-    minio/minio server /data --console-address ":$MINIO_CONSOLE"
+    echo -e "${GREEN}Velero CLI already exists: $(velero version --client --short)${NC}"
+fi
+# --------------------------------------------
 
-  echo "Waiting 5s for MinIO to start..."
-  sleep 5
+# Step 1: MinIO Start
+echo -e "${YELLOW}Step 1: Starting MinIO (Docker)...${NC}"
+if docker ps -a --format '{{.Names}}' | grep -q "^minio$"; then
+    docker start minio || true
+else
+    docker run -d --name minio \
+        -p $MINIO_PORT:9000 -p $MINIO_CONSOLE:$MINIO_CONSOLE \
+        -e "MINIO_ROOT_USER=$MINIO_USER" \
+        -e "MINIO_ROOT_PASSWORD=$MINIO_PASS" \
+        minio/minio server /data --console-address ":$MINIO_CONSOLE"
 fi
 
-echo -e "${YELLOW}Creating alias & bucket '$VELERO_BUCKET'...${NC}"
-docker exec minio mc alias set myminio http://localhost:$MINIO_PORT $MINIO_USER $MINIO_PASS || true
+echo "Waiting for MinIO..."
+sleep 5
+
+# Create Bucket
+docker exec minio mc alias set myminio http://localhost:9000 $MINIO_USER $MINIO_PASS || true
 docker exec minio mc mb myminio/$VELERO_BUCKET || true
 
-echo -e "${YELLOW}Step 2: Creating credentials-velero file...${NC}"
+# Step 2: Credentials
 cat <<EOF > credentials-velero
 [default]
 aws_access_key_id = $MINIO_USER
 aws_secret_access_key = $MINIO_PASS
 EOF
 
-echo -e "${YELLOW}Step 3: Adding/updating Helm repo...${NC}"
+# Step 3: Velero Install
+echo -e "${YELLOW}Step 3: Installing Velero Server (Helm)...${NC}"
 helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts || true
 helm repo update
 
-echo -e "${YELLOW}Step 4: Installing/Upgrading Velero with MinIO config...${NC}"
 helm upgrade --install velero vmware-tanzu/velero \
   --namespace $VELERO_NS --create-namespace \
   --set "configuration.backupStorageLocation[0].name=default" \
@@ -67,7 +81,7 @@ helm upgrade --install velero vmware-tanzu/velero \
   --set "configuration.backupStorageLocation[0].bucket=$VELERO_BUCKET" \
   --set "configuration.backupStorageLocation[0].config.region=minio" \
   --set "configuration.backupStorageLocation[0].config.s3ForcePathStyle=true" \
-  --set "configuration.backupStorageLocation[0].config.s3Url=http://$HOST_IP:$MINIO_PORT" \
+  --set "configuration.backupStorageLocation[0].config.s3Url=http://$DOCKER_GATEWAY_IP:$MINIO_PORT" \
   --set credentials.secretContents.cloud="$(cat credentials-velero)" \
   --set snapshotsEnabled=false \
   --set "initContainers[0].name=velero-plugin-for-aws" \
@@ -76,29 +90,13 @@ helm upgrade --install velero vmware-tanzu/velero \
   --set "initContainers[0].volumeMounts[0].name=plugins" \
   --wait --timeout=300s
 
-echo -e "${GREEN}Velero installed! Checking backup location...${NC}"
-velero backup-location get
+# Step 4: Verification
+echo -e "${GREEN}Verifying Backup Location Status...${NC}"
+sleep 10
+kubectl get backupstoragelocation -n $VELERO_NS
 
-echo ""
-echo -e "${YELLOW}Step 5: Testing Backup & Restore (simulate disaster)...${NC}"
-echo "Creating test backup of namespace: $APP_NAMESPACE"
-
+echo -e "${YELLOW}Step 5: Testing Backup of $APP_NAMESPACE...${NC}"
+velero backup delete my-k8s-backup --confirm || true
 velero backup create my-k8s-backup --include-namespaces $APP_NAMESPACE --wait
 
-echo "Simulating disaster: Deleting namespace $APP_NAMESPACE"
-kubectl delete namespace $APP_NAMESPACE --force --grace-period=0 || true
-
-sleep 5
-
-echo "Restoring from backup..."
-velero restore create --from-backup my-k8s-backup --wait
-
-echo "Verifying pods after restore:"
-kubectl get pods -n $APP_NAMESPACE || echo "Namespace restored – check pods"
-
-echo -e "${GREEN}====================================${NC}"
-echo "Backup setup & test complete!"
-echo "MinIO Console: http://$HOST_IP:$MINIO_CONSOLE (user/pass: minioadmin/minioadmin)"
-echo "To cleanup MinIO: docker stop minio && docker rm minio"
-echo "To delete Velero: helm uninstall velero -n $VELERO_NS"
-echo -e "${GREEN}====================================${NC}"
+echo -e "${GREEN}✅ Backup created. Ready for disaster simulation!${NC}"
