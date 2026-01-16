@@ -29,7 +29,9 @@ install_docker() {
   echo -e "${YELLOW}Installing Docker...${NC}"
   sudo apt update -y
   sudo apt install -y docker.io
-  sudo usermod -aG docker "$USER" && newgrp docker
+  sudo usermod -aG docker jenkins
+  sudo chown jenkins:docker /var/run/docker.sock
+  sudo chmod 666 /var/run/docker.sock
 
   echo -e "${YELLOW}Docker installed. Please log out and log back in (or run 'newgrp docker') for group change to take effect.${NC}"
   echo "Verify later: docker --version"
