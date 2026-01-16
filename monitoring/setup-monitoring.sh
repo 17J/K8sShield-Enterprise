@@ -30,7 +30,7 @@ helm upgrade --install "$RELEASE_NAME" prometheus-community/kube-prometheus-stac
   --set grafana.adminPassword="$GRAFANA_PASS" \
   --set grafana.service.type=NodePort \
   --set grafana.service.nodePort="$GRAFANA_PORT" \
-  --set prometheus.prometheusSpec.storageSpec={} \
+  --set prometheus.prometheusSpec.storageSpec=null \
   --set prometheusOperator.admissionWebhooks.enabled=false \
   --wait --timeout=300s
 
