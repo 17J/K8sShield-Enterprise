@@ -10,7 +10,8 @@ NC='\033[0m'
 
 CLUSTER_NAME="kubesafe-demo"
 APP_NAMESPACE="two-tier-app"
-MINIO_PORT=9000
+# FIX: Host port 9005 use kar rahe hain kyunki 9000 pe SonarQube hai
+MINIO_PORT=9005 
 MINIO_CONSOLE=9001
 MINIO_USER="minioadmin"
 MINIO_PASS="minioadmin"
@@ -21,44 +22,36 @@ VELERO_NS="velero"
 DOCKER_GATEWAY_IP=$(docker network inspect bridge -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
 
 echo -e "${GREEN}=== KubeSafe Backup Setup (MinIO + Velero) ===${NC}"
+echo "MinIO API: http://localhost:$MINIO_PORT (SonarQube safe)"
 
-# --- NAYA SECTION: VELERO CLI INSTALLATION ---
+# --- VELERO CLI INSTALLATION ---
 if ! command -v velero >/dev/null 2>&1; then
     echo -e "${YELLOW}Velero CLI not found. Installing latest version...${NC}"
-    
-    # Get latest version tag from GitHub
     VELERO_VERSION=$(curl -s https://api.github.com/repos/vmware-tanzu/velero/releases/latest | grep tag_name | cut -d '"' -f 4)
-    echo "Downloading Velero $VELERO_VERSION..."
-    
-    # Download, Extract and Install
     curl -LO "https://github.com/vmware-tanzu/velero/releases/download/${VELERO_VERSION}/velero-${VELERO_VERSION}-linux-amd64.tar.gz"
     tar -xvf "velero-${VELERO_VERSION}-linux-amd64.tar.gz"
     sudo mv "velero-${VELERO_VERSION}-linux-amd64/velero" /usr/local/bin/
-    
-    # Cleanup
     rm -rf "velero-${VELERO_VERSION}-linux-amd64" "velero-${VELERO_VERSION}-linux-amd64.tar.gz"
     echo -e "${GREEN}Velero CLI installed successfully!${NC}"
-else
-    echo -e "${GREEN}Velero CLI already exists: $(velero version --client --short)${NC}"
 fi
-# --------------------------------------------
 
-# Step 1: MinIO Start
+# Step 1: MinIO Start (Force recreate to fix port conflicts)
 echo -e "${YELLOW}Step 1: Starting MinIO (Docker)...${NC}"
 if docker ps -a --format '{{.Names}}' | grep -q "^minio$"; then
-    docker start minio || true
-else
-    docker run -d --name minio \
-        -p $MINIO_PORT:9000 -p $MINIO_CONSOLE:$MINIO_CONSOLE \
-        -e "MINIO_ROOT_USER=$MINIO_USER" \
-        -e "MINIO_ROOT_PASSWORD=$MINIO_PASS" \
-        minio/minio server /data --console-address ":$MINIO_CONSOLE"
+    echo "Removing old MinIO container to update ports..."
+    docker rm -f minio
 fi
+
+docker run -d --name minio \
+    -p $MINIO_PORT:9000 -p $MINIO_CONSOLE:9001 \
+    -e "MINIO_ROOT_USER=$MINIO_USER" \
+    -e "MINIO_ROOT_PASSWORD=$MINIO_PASS" \
+    minio/minio server /data --console-address ":9001"
 
 echo "Waiting for MinIO..."
 sleep 5
 
-# Create Bucket
+# Create Bucket (Internal container communication uses 9000)
 docker exec minio mc alias set myminio http://localhost:9000 $MINIO_USER $MINIO_PASS || true
 docker exec minio mc mb myminio/$VELERO_BUCKET || true
 
