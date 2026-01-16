@@ -1,441 +1,407 @@
-# 🏗️ K8sShield-Enterprise: End-to-End Secure Kubernetes Stack
+# 🛡️ K8sShield-Enterprise
 
-## 📋 Prerequisites
+A **production-grade DevSecOps pipeline** for a Two-Tier Application, demonstrating end-to-end security integration from code to deployment on Kubernetes.
 
-### 1. Docker
-
-- **Ubuntu/Debian:**
-
-  ```bash
-  sudo apt update
-  sudo apt install docker.io -y
-  sudo usermod -aG docker $USER  && newgrp docker
-  ```
-
-### 2. Kind (Kubernetes IN Docker)
-
-Local Kubernetes cluster
-
-````bash
-# Linux/macOS/Windows (with curl)
-curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64   # macOS: darwin-amd64, Windows: windows-amd64
-chmod +x ./kind
-sudo mv ./kind /usr/local/bin/kind
-
-
-> Verify: `kind version`
-
-### 3. kubectl
-
-```bash
-# Linux
-curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-chmod +x kubectl
-sudo mv kubectl /usr/local/bin/
-
-
-> Verify: `kubectl version --client`
-
-### 4. Helm
-
-Package manager for Kubernetes.
-
-```bash
-curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-
-# Ya macOS: brew install helm
-````
-
-> Verify: `helm version`
-
----🚀
-
-## 🌟 Key Features
-
-- 🛡️ **Zero-Trust Networking:** Calico-based default-deny policies.
-- 🔐 **Hardened RBAC:** Fine-grained permissions for ServiceAccounts.
-- 💾 **Disaster Recovery:** Automated backups using Velero & Minio S3 storage.
-- 📊 **Full-Stack Monitoring:** Prometheus & Grafana integration with custom ServiceMonitors.
-- 🛣️ **Traffic Management:** Nginx Ingress Controller for secure external access.
+[![Pipeline Status](https://img.shields.io/badge/Pipeline-Passing-success)]()
+[![Security Scan](https://img.shields.io/badge/Security-Enabled-blue)]()
+[![Kubernetes](https://img.shields.io/badge/K8s-Kind-orange)]()
+[![License](https://img.shields.io/badge/License-MIT-green)]()
 
 ---
 
-## 🛠️ Quick Start Guide
+## 📋 Overview
 
-### Phase 1: Cluster & Networking Setup
+This project showcases a **complete DevSecOps pipeline** with multiple security scanning tools integrated at every stage—from secret detection to container vulnerability scanning—before deploying to a Kind Kubernetes cluster.
 
-```bash
-# Create Kind Cluster with Ingress support
-cat <<EOF | kind create cluster --name kubesafe-demo --config=-
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-- role: control-plane
-  kubeadmConfigPatches:
-  - |
-    kind: InitConfiguration
-    nodeRegistration:
-      kubeletExtraArgs:
-        node-labels: "ingress-ready=true"
-  extraPortMappings:
-  - containerPort: 80
-    hostPort: 80
-  - containerPort: 443
-    hostPort: 443
-EOF
+### **Key Highlights**
 
-# Deploy Calico for Network Policies
-kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.3/manifests/tigera-operator.yaml
-kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.3/manifests/custom-resources.yaml
+✅ **Multi-layer Security Scanning** (Secrets, SAST, SCA, Container)  
+✅ **Zero-Trust Network Policies** with Calico  
+✅ **RBAC-based Access Control**  
+✅ **Automated Backup & Disaster Recovery** with Velero  
+✅ **Full-Stack Monitoring** with Prometheus & Grafana  
+✅ **CI/CD Automation** via Jenkins Pipeline
 
-# FIX: Patch Calico IP Pool for Kind (Avoid CIDR Mismatch)
-kubectl patch installation default --type=merge -p '{"spec": {"calicoNetwork": {"ipPools": [{"cidr": "10.244.0.0/16", "encapsulation": "VXLAN"}]}}}'
+---
 
-# Wait for Calico
-kubectl wait --for=condition=ready pod -l k8s-app=calico-node -A --timeout=300s
+## 🏗️ Architecture & Pipeline Flow
+
+<p align="center">
+    <img src="assets/k8sshield_devsecops.png" alt="DevSecOps Pipeline Flow"/>
+</p>
+
+**Pipeline Stages:**
+
+1. **Code Commit** → Trigger Jenkins Pipeline
+2. **Secret Scanning** → Gitleaks detects hardcoded credentials
+3. **SAST Analysis** → SonarQube analyzes code quality & vulnerabilities
+4. **Dependency Scanning** → Snyk checks for vulnerable packages
+5. **Container Build** → Docker image creation
+6. **Image Scanning** → Trivy scans for OS/library vulnerabilities
+7. **Deploy to K8s** → Kind cluster deployment with RBAC & Network Policies
+8. **Backup Setup** → Velero configures automated backups
+9. **Monitoring** → Prometheus & Grafana dashboards
+
+---
+
+## 🔧 Tech Stack
+
+### **Application Layer**
+
+```
+Frontend:
+└── Nginx              # Web Server & Reverse Proxy
+
+Backend:
+└── Redis              # In-Memory Database
 ```
 
-### Phase 2: Ingress Controller Setup
+### **DevOps & Infrastructure**
+
+```
+CI/CD:
+├── Jenkins            # Pipeline Orchestration
+├── Git/GitHub         # Version Control
+└── kubectl            # Kubernetes CLI
+
+Orchestration:
+└── Kind               # Kubernetes in Docker (Local Development)
+```
+
+### **Security Tools (DevSecOps)**
+
+```
+Secret Scanning:
+└── Gitleaks           # Detect hardcoded secrets in code
+
+Dependency Scanning (SCA):
+└── Snyk               # Software Composition Analysis
+
+Code Quality (SAST):
+└── SonarQube          # Static Application Security Testing
+
+Filesystem Security:
+└── Trivy              # Container & Filesystem Vulnerability Scanner
+
+Network Security:
+└── Calico             # Network Policies & Micro-segmentation
+
+Access Control:
+└── RBAC               # Role-Based Access Control (Kubernetes)
+
+Backup & Disaster Recovery:
+└── Velero + MinIO     # Kubernetes Backup & Restore with S3 Storage
+```
+
+### **Monitoring & Observability**
+
+```
+Metrics:
+└── Prometheus         # Metrics Collection & Alerting
+
+Visualization:
+└── Grafana            # Dashboards & Analytics
+
+Service Discovery:
+└── ServiceMonitor     # Auto-discovery of application metrics
+```
+
+---
+
+## 📊 Pipeline Results
+
+### **Jenkins Pipeline View**
+
+<p align="center">
+    <img src="assets/k8sshield_pipeline.png" alt="Jenkins Pipeline Stages" width="800"/>
+</p>
+
+### **SonarQube Security Report**
+
+<p align="center">
+    <img src="assets/k8sshield_sonarqube_repport.png" alt="SonarQube Analysis" width="800"/>
+</p>
+
+### **Kubernetes Pods Running**
+
+<p align="center">
+    <img src="assets/k8sshield_pods.png" alt="K8s Pods Status" width="800"/>
+</p>
+
+---
+
+## 📁 Project Structure
+
+```
+K8sShield-Enterprise/
+├── backup/
+│   └── backup.sh                     # Velero backup automation script
+│
+├── scripts/
+│   ├── install-prereqs.sh            # Install Docker, Kind, kubectl & tools
+│   ├── setup-cluster-and-policy.sh   # Setup Kind cluster with Calico
+│   └── cleanup.sh                    # Clean up cluster & containers
+│
+├── monitoring/
+│   ├── setup-monitoring.sh           # Deploy Prometheus & Grafana
+│   └── nginx-servicemonitor.yml      # Nginx metrics monitoring
+│
+├── k8s-deploy/
+│   ├── frontend-nginx-ds.yml         # Nginx deployment
+│   ├── backend-redis-ds.yml          # Redis deployment
+│   ├── ingress.yml                   # Ingress controller config
+│   ├── network-policy.yml            # Calico network policies
+│   └── rbac.yml                      # RBAC roles & bindings
+│
+├── Jenkinsfile                       # CI/CD pipeline definition
+├── sonar-project.properties          # SonarQube configuration
+├── README.md                         # Project documentation
+└── assets/                           # Screenshots & diagrams
+```
+
+---
+
+## 🚀 Quick Start - Automated Deployment
+
+### **Option 1: Fully Automated (Recommended)**
+
+For a **complete automated deployment** with all security tools integrated, use the Jenkins pipeline:
 
 ```bash
-# Install NGINX Ingress Controller
-kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
-
-# FIX: Delete Validation Webhook (Prevents "Connection Refused" error)
-sleep 10
-kubectl delete -A ValidatingWebhookConfiguration ingress-nginx-admission
-
-# Wait for Controller
-kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=120s
+# The Jenkinsfile automates:
+# ✓ Secret scanning with Gitleaks
+# ✓ Code quality analysis with SonarQube
+# ✓ Dependency scanning with Snyk
+# ✓ Container scanning with Trivy
+# ✓ Kubernetes deployment with RBAC
+# ✓ Network policies with Calico
+# ✓ Backup setup with Velero
+# ✓ Monitoring with Prometheus & Grafana
 ```
 
-### Phase 3: Secure Application Deployment
+**Steps:**
 
-**Nginx (Frontend)** and **Redis (Backend)** deployment phase
+1. **Configure Jenkins** with required plugins (Git, Docker, Kubernetes)
+2. **Create a Jenkins Pipeline Job** pointing to this repository
+3. **Trigger the pipeline** - Everything runs automatically!
+4. **Access the application** via the configured Ingress
 
-```yaml
-# Save in app.yml
-# 1. Namespace: Logical isolation for the entire application stack
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: two-tier-app
 ---
-# 2. ServiceAccount: Provides a dedicated identity for the Nginx pod
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: nginx-sa
-  namespace: two-tier-app
----
-# 3. RBAC Role: Defines specific permissions (ReadOnly access to Pods and Services)
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: nginx-role
-  namespace: two-tier-app
-rules:
-  - apiGroups: [""]
-    resources: ["services", "pods"]
-    verbs: ["get", "list"]
----
-# 4. RoleBinding: Grants the defined Role permissions to the Nginx ServiceAccount
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: nginx-rb
-  namespace: two-tier-app
-subjects:
-  - kind: ServiceAccount
-    name: nginx-sa
-    namespace: two-tier-app
-roleRef:
-  kind: Role
-  name: nginx-role
-  apiGroup: rbac.authorization.k8s.io
----
-# 5. Redis Backend Deployment: Database/Cache layer for the application
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: redis
-  namespace: two-tier-app
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: redis
-  template:
-    metadata:
-      labels:
-        app: redis # Target label for NetPol and Monitoring
-    spec:
-      containers:
-        - name: redis
-          image: redis:alpine
-          ports:
-            - containerPort: 6379
----
-# 6. Redis Service: Internal service to expose the Redis database
-apiVersion: v1
-kind: Service
-metadata:
-  name: redis
-  namespace: two-tier-app
-spec:
-  selector:
-    app: redis
-  ports:
-    - name: redis-port
-      port: 6379
-      targetPort: 6379
----
-# 7. Nginx Frontend Deployment: Web server layer configured with RBAC identity
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: nginx
-  namespace: two-tier-app
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: nginx
-  template:
-    metadata:
-      labels:
-        app: nginx
-    spec:
-      serviceAccountName: nginx-sa # Attaching RBAC ServiceAccount
-      containers:
-        - name: nginx
-          image: nginx:alpine
-          ports:
-            - containerPort: 80
----
-# 8. Nginx Service: Exposes Frontend with named port 'http' for Prometheus scraping
-apiVersion: v1
-kind: Service
-metadata:
-  name: nginx
-  namespace: two-tier-app
-spec:
-  selector:
-    app: nginx
-  ports:
-    - name: http # Port name required for Prometheus ServiceMonitor
-      port: 80
-      targetPort: 80
----
-# 9. Ingress: Routes external HTTP traffic to the Nginx frontend service
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: nginx-ingress
-  namespace: two-tier-app
-spec:
-  ingressClassName: nginx
-  rules:
-    - http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: nginx
-                port:
-                  number: 80
----
-# 10. Network Policy (Default Deny): Implements Zero-Trust by blocking all traffic by default
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-all
-  namespace: two-tier-app
-spec:
-  podSelector: {} # Targets all pods in this namespace
-  policyTypes: [Ingress, Egress]
----
-# 11. NetPol (Allow Ingress): Permits traffic only from the Ingress Controller to Nginx
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-ingress-to-nginx
-  namespace: two-tier-app
-spec:
-  podSelector:
-    matchLabels:
-      app: nginx
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: ingress-nginx
----
-# 12. NetPol (App Isolation): Allows Nginx to communicate with Redis on specific port
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-nginx-to-redis
-  namespace: two-tier-app
-spec:
-  podSelector:
-    matchLabels:
-      app: redis
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app: nginx # Only traffic from pods labeled 'app: nginx' is allowed
-      ports:
-        - protocol: TCP
-          port: 6379
----
-# 13. NetPol (DNS Access): Permits pods to perform DNS lookups via CoreDNS
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-dns-egress
-  namespace: two-tier-app
-spec:
-  podSelector: {}
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - protocol: UDP
-          port: 53
-```
+
+### **Option 2: Manual Step-by-Step**
+
+If you prefer manual execution, run scripts in this order:
 
 ```bash
-kubectl apply -f app.yaml
+# Step 1: Install prerequisites
+./scripts/install-prereqs.sh
+
+# Step 2: Setup Kind cluster with Calico network policies
+./scripts/setup-cluster-and-policy.sh
+
+# Step 3: Deploy application with RBAC
+kubectl apply -f k8s-deploy/
+
+# Step 4: Setup monitoring
+./monitoring/setup-monitoring.sh
+
+# Step 5: Configure backups
+./backup/backup.sh
+
+# Step 6: Verify deployment
+kubectl get pods --all-namespaces
 ```
 
-### Phase 4: Security & Connection Testing
+---
 
-```bash
-# Pod Name Export
-export NIC_POD=$(kubectl get pod -l app=nginx -n two-tier-app -o jsonpath='{.items[0].metadata.name}')
+## 🔐 Security Features
 
-# Alpine image uses to install curl
-kubectl exec -it $NIC_POD -n two-tier-app -- apk add curl
+| Feature                   | Tool               | Description                                            |
+| ------------------------- | ------------------ | ------------------------------------------------------ |
+| **🔍 Secret Detection**   | Gitleaks           | Scans code for hardcoded credentials, API keys, tokens |
+| **📊 Code Quality**       | SonarQube          | SAST analysis for bugs, vulnerabilities, code smells   |
+| **📦 Dependency Check**   | Snyk               | SCA for vulnerable npm/pip/maven packages              |
+| **🐳 Container Scanning** | Trivy              | Scans Docker images for CVEs in OS & libraries         |
+| **🛡️ Network Policies**   | Calico             | Zero-trust pod-to-pod communication control            |
+| **🔐 Access Control**     | RBAC               | Fine-grained Kubernetes permissions                    |
+| **💾 Backup & DR**        | Velero             | Automated cluster backups to MinIO S3                  |
+| **📈 Monitoring**         | Prometheus/Grafana | Real-time metrics & alerting                           |
 
-# 1. Test Redis Connection (ALLOWED)
-kubectl exec -it $NIC_POD -n two-tier-app -- curl -v redis:6379
+---
 
-# 2. Test External Connection (BLOCKED by NetPol)
-kubectl exec -it $NIC_POD -n two-tier-app -- curl --connect-timeout 5 google.com
+## 🛡️ Security Highlights
 
-# 3. Test RBAC (List Pods via ServiceAccount - ALLOWED)
-kubectl exec -it $NIC_POD -n two-tier-app -- sh -c "curl -k -H \"Authorization: Bearer \$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)\" https://kubernetes.default/api/v1/namespaces/two-tier-app/pods"
-```
+### **1. Zero-Trust Networking**
 
-### Phase 5: Monitoring (Observability)
+- Default-deny network policies with Calico
+- Pod-to-pod communication whitelisting
+- Namespace isolation
 
-````bash
-helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
-  --namespace monitoring --create-namespace \
-  --set grafana.adminPassword=admin \
-  --set grafana.service.port=3000
+### **2. Hardened RBAC**
 
+- Service accounts with minimal permissions
+- Role-based access to specific resources
+- No cluster-admin by default
 
-```yml
-# nginx-servicemonitor.yml
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: nginx-sm
-  namespace: monitoring
-  labels:
-    release: monitoring
-spec:
-  selector:
-    matchLabels:
-      app: nginx
-  namespaceSelector:
-    any: false
-    matchNames:
-      - two-tier-app
-  endpoints:
-  - port: http
-```
+### **3. Disaster Recovery**
 
-# Apply ServiceMonitor to bridge App and Prometheus
+- Automated daily backups with Velero
+- MinIO S3-compatible storage backend
+- One-click cluster restoration
 
-kubectl apply -f nginx-servicemonitor.yml
+### **4. Comprehensive Monitoring**
 
-````
+- Prometheus metrics collection
+- Grafana dashboards for visualization
+- ServiceMonitor for auto-discovery
 
-### Phase 6: Backup & Disaster Recovery (Velero + Minio)
+### **5. Secure Ingress**
 
-```bash
-# 6.1 Minio Installation (Local Docker)
-docker run -d --name minio -p 9000:9000 -p 9001:9001 \
-  -e "MINIO_ROOT_USER=minioadmin" -e "MINIO_ROOT_PASSWORD=minioadmin" \
-  minio/minio server /data --console-address ":9001"
+- Nginx Ingress Controller
+- TLS/SSL termination ready
+- Rate limiting & IP whitelisting capable
 
-# Create Bucket
-docker exec -it minio mc alias set myminio http://localhost:9000 minioadmin minioadmin
-docker exec -it minio mc mb myminio/velero
-```
+---
 
-```bash
-# Credentials file
-cat <<EOF > credentials-velero
-[default]
-aws_access_key_id = minioadmin
-aws_secret_access_key = minioadmin
-EOF
-```
+### **Pre-configured Dashboards**
 
-# Add Helm Chart
-
-```bash
-helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts
-helm repo update
-```
-
-# Install Velero
-
-```bash
-helm upgrade --install velero vmware-tanzu/velero \
-  --namespace velero --create-namespace \
-  --set "configuration.backupStorageLocation[0].name=default" \
-  --set "configuration.backupStorageLocation[0].provider=aws" \
-  --set "configuration.backupStorageLocation[0].bucket=velero" \
-  --set "configuration.backupStorageLocation[0].config.region=minio" \
-  --set "configuration.backupStorageLocation[0].config.s3ForcePathStyle=true" \
-  --set "configuration.backupStorageLocation[0].config.s3Url=http://$(hostname -I | awk '{print $1}'):9000" \
-  --set credentials.secretContents.cloud="$(cat credentials-velero)" \
-  --set snapshotsEnabled=false \
-  --set "initContainers[0].name=velero-plugin-for-aws" \
-  --set "initContainers[0].image=velero/velero-plugin-for-aws:v1.10.0" \
-  --set "initContainers[0].volumeMounts[0].mountPath=/target" \
-  --set "initContainers[0].volumeMounts[0].name=plugins"
-```
-
-```bash
-# Backup & Restore testing
-velero backup-location get
-velero backup create my-k8s-backup --include-namespaces two-tier-app
-kubectl delete namespace two-tier-app  # Simulate disaster
-velero restore create --from-backup my-k8s-backup
-kubectl get pods -n two-tier-app  # Verify
-```
+- Kubernetes Cluster Metrics
+- Nginx Performance Metrics
+- Redis Database Metrics
+- Node Resource Utilization
 
 ---
 
 ## 🧪 Testing
 
-- **NetPol Check:** `curl google.com` (Should timeout 🚫)
-- **RBAC Check:** `curl` to K8s API (Should list pods ✅)
-- **DR Check:** `velero backup create` -> `kubectl delete ns` -> `velero restore` (Success ✅)
-
-## 🧹 Cleanup
+### **Verify Security Scans**
 
 ```bash
-kind delete cluster --name kubesafe-demo
-docker stop minio && docker rm minio
+# Run Gitleaks locally
+gitleaks detect --source . --verbose
+
+# Run Trivy scan
+trivy image nginx:latest
+
+# Check SonarQube results
+# Access SonarQube dashboard after pipeline run
 ```
+
+### **Test Network Policies**
+
+```bash
+# Test pod-to-pod connectivity
+kubectl run test-pod --image=busybox -it --rm -- sh
+wget -O- http://nginx-service
+
+# Should be blocked if not whitelisted
+```
+
+### **Test Backup & Restore**
+
+```bash
+# Create backup
+velero backup create test-backup --include-namespaces=default
+
+# Verify backup
+velero backup get
+
+# Restore from backup
+velero restore create --from-backup test-backup
+```
+
+---
+
+## 🐛 Troubleshooting
+
+### **Common Issues**
+
+**Issue 1: Jenkins pipeline fails at security scan stage**
+
+```bash
+# Solution: Ensure SonarQube/Snyk tokens are configured
+# Check Jenkins credentials: Manage Jenkins → Credentials
+```
+
+**Issue 2: Pods not starting**
+
+```bash
+# Check pod status
+kubectl get pods -A
+kubectl describe pod <pod-name>
+
+# Check network policies
+kubectl get networkpolicies
+```
+
+**Issue 3: Velero backup fails**
+
+```bash
+# Check Velero logs
+kubectl logs -n velero deployment/velero
+
+# Verify MinIO connectivity
+velero backup-location get
+```
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please follow these steps:
+
+1. **Fork the repository**
+2. **Create feature branch**
+   ```bash
+   git checkout -b feature/AmazingFeature
+   ```
+3. **Commit your changes**
+   ```bash
+   git commit -m 'Add: AmazingFeature'
+   ```
+4. **Push to branch**
+   ```bash
+   git push origin feature/AmazingFeature
+   ```
+5. **Open Pull Request**
+
+### **Contribution Guidelines**
+
+- Follow existing code style
+- Add tests for new features
+- Update documentation
+- Ensure all security scans pass
+
+---
+
+## 📝 License
+
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 👨‍💻 Author
+
+**Rahul Joshi**  
+📧 Email: [17rahuljoshi@gmail.com](mailto:17rahuljoshi@gmail.com)  
+🔗 GitHub: [@17J](https://github.com/17J)
+
+---
+
+## 🙏 Acknowledgments
+
+- [Kubernetes Documentation](https://kubernetes.io/docs/)
+- [Calico Project](https://www.tigera.io/project-calico/)
+- [Velero Backup Tool](https://velero.io/)
+- [Jenkins Community](https://www.jenkins.io/)
+- DevSecOps Community
+
+---
+
+## ⭐ Show Your Support
+
+Give a ⭐ if this project helped you learn DevSecOps!
+
+---
+
+**Built with ❤️ for the DevSecOps Community**
