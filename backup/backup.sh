@@ -32,6 +32,7 @@ if ! command -v velero >/dev/null 2>&1; then
 fi
 
 # --- STEP 1: MINIO ---
+echo -e "${YELLOW}Step 1: Setting up MinIO...${NC}"
 docker rm -f minio || true
 docker run -d --name minio \
     -p $MINIO_PORT:9000 -p $MINIO_CONSOLE:9001 \
@@ -43,49 +44,96 @@ docker exec minio mc alias set myminio http://localhost:9000 $MINIO_USER $MINIO_
 docker exec minio mc mb myminio/$VELERO_BUCKET || true
 
 # --- STEP 2: CREDENTIALS ---
+echo -e "${YELLOW}Step 2: Creating credentials...${NC}"
 cat <<EOF > credentials-velero
 [default]
 aws_access_key_id = $MINIO_USER
 aws_secret_access_key = $MINIO_PASS
 EOF
 
-# --- STEP 3: VELERO INSTALL (Fixed for Pre-install Error) ---
-echo -e "${YELLOW}Step 3: Installing Velero CRDs and Server...${NC}"
+# --- STEP 3: INSTALL VELERO CRDs FIRST ---
+echo -e "${YELLOW}Step 3: Installing Velero CRDs...${NC}"
+
+# Create namespace first
+kubectl create namespace $VELERO_NS --dry-run=client -o yaml | kubectl apply -f -
+
+# Download and apply all CRDs
+VELERO_VERSION=$(curl -s https://api.github.com/repos/vmware-tanzu/velero/releases/latest | grep tag_name | cut -d '"' -f 4 | sed 's/v//')
+CRD_BASE_URL="https://raw.githubusercontent.com/vmware-tanzu/velero/v${VELERO_VERSION}/config/crd/v1/bases"
+
+echo "Downloading CRDs from version v${VELERO_VERSION}..."
+
+for crd in backups backupstoragelocations deletebackuprequests downloadrequests \
+           podvolumebackups podvolumerestores resticrepositories restores \
+           schedules serverstatusrequests volumesnapshotlocations backuprepositories \
+           datadownloads datauploads; do
+    echo "  - Applying ${crd}.velero.io CRD..."
+    kubectl apply -f "${CRD_BASE_URL}/velero.io_${crd}.yaml" 2>/dev/null || true
+done
+
+# Wait for CRDs to be established
+echo "Waiting for CRDs to be fully established..."
+kubectl wait --for condition=established --timeout=60s crd/backups.velero.io
+kubectl wait --for condition=established --timeout=60s crd/backupstoragelocations.velero.io
+kubectl wait --for condition=established --timeout=60s crd/restores.velero.io
+kubectl wait --for condition=established --timeout=60s crd/volumesnapshotlocations.velero.io
+
+sleep 5
+
+# --- STEP 4: INSTALL VELERO SERVER ---
+echo -e "${YELLOW}Step 4: Installing Velero Server via Helm...${NC}"
+
 helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts || true
 helm repo update
 
-# Manually Apply ALL required CRDs
-kubectl apply -f https://raw.githubusercontent.com/vmware-tanzu/velero/main/config/crd/v1/bases/velero.io_backups.yaml
-kubectl apply -f https://raw.githubusercontent.com/vmware-tanzu/velero/main/config/crd/v1/bases/velero.io_backupstoragelocations.yaml
-kubectl apply -f https://raw.githubusercontent.com/vmware-tanzu/velero/main/config/crd/v1/bases/velero.io_restores.yaml
-kubectl apply -f https://raw.githubusercontent.com/vmware-tanzu/velero/main/config/crd/v1/bases/velero.io_volumesnapshotlocations.yaml
+# Uninstall previous release if exists
+helm uninstall velero -n $VELERO_NS 2>/dev/null || true
+sleep 5
 
-echo "Waiting for CRDs to be processed..."
-sleep 20
-
-# Use --skip-crds to bypass Helm's problematic pre-install check
-helm upgrade --install velero vmware-tanzu/velero \
-  --namespace $VELERO_NS --create-namespace \
+# Install with --skip-crds since we already applied them
+helm install velero vmware-tanzu/velero \
+  --namespace $VELERO_NS \
   --skip-crds \
-  --set "configuration.backupStorageLocation[0].name=default" \
-  --set "configuration.backupStorageLocation[0].provider=aws" \
-  --set "configuration.backupStorageLocation[0].bucket=$VELERO_BUCKET" \
-  --set "configuration.backupStorageLocation[0].config.region=minio" \
-  --set "configuration.backupStorageLocation[0].config.s3ForcePathStyle=true" \
-  --set "configuration.backupStorageLocation[0].config.s3Url=http://$DOCKER_GATEWAY_IP:$MINIO_PORT" \
-  --set credentials.secretContents.cloud="$(cat credentials-velero)" \
+  --set-file credentials.secretContents.cloud=credentials-velero \
+  --set configuration.backupStorageLocation[0].name=default \
+  --set configuration.backupStorageLocation[0].provider=aws \
+  --set configuration.backupStorageLocation[0].bucket=$VELERO_BUCKET \
+  --set configuration.backupStorageLocation[0].config.region=minio \
+  --set configuration.backupStorageLocation[0].config.s3ForcePathStyle=true \
+  --set configuration.backupStorageLocation[0].config.s3Url=http://$DOCKER_GATEWAY_IP:$MINIO_PORT \
   --set snapshotsEnabled=false \
-  --set "initContainers[0].name=velero-plugin-for-aws" \
-  --set "initContainers[0].image=velero/velero-plugin-for-aws:v1.10.0" \
-  --set "initContainers[0].volumeMounts[0].mountPath=/target" \
-  --set "initContainers[0].volumeMounts[0].name=plugins"
+  --set deployNodeAgent=false \
+  --set initContainers[0].name=velero-plugin-for-aws \
+  --set initContainers[0].image=velero/velero-plugin-for-aws:v1.10.0 \
+  --set initContainers[0].volumeMounts[0].mountPath=/target \
+  --set initContainers[0].volumeMounts[0].name=plugins
 
-# Wait for pod
-kubectl wait --namespace $VELERO_NS --for=condition=ready pod --selector=component=velero --timeout=600s
+# --- STEP 5: WAIT FOR VELERO POD ---
+echo -e "${YELLOW}Step 5: Waiting for Velero to be ready...${NC}"
+kubectl wait --namespace $VELERO_NS \
+  --for=condition=ready pod \
+  --selector=component=velero \
+  --timeout=300s
 
-# --- STEP 5: TEST BACKUP ---
-echo -e "${YELLOW}Step 5: Testing Backup...${NC}"
-velero backup delete my-k8s-backup --confirm || true
+# Verify backup location
+echo "Verifying backup storage location..."
+sleep 10
+velero backup-location get || echo "Backup location not yet available, retrying..."
+sleep 5
+velero backup-location get
+
+# --- STEP 6: TEST BACKUP ---
+echo -e "${YELLOW}Step 6: Testing Backup...${NC}"
+velero backup delete my-k8s-backup --confirm 2>/dev/null || true
+sleep 5
 velero backup create my-k8s-backup --include-namespaces $APP_NAMESPACE --wait
 
-echo -e "${GREEN}✅ SUCCESS!${NC}"
+echo ""
+echo -e "${GREEN}✅ SUCCESS! Velero is installed and configured.${NC}"
+echo -e "${GREEN}MinIO Console: http://localhost:$MINIO_CONSOLE${NC}"
+echo -e "${GREEN}Credentials: $MINIO_USER / $MINIO_PASS${NC}"
+echo ""
+echo "Verify installation:"
+echo "  kubectl get pods -n $VELERO_NS"
+echo "  velero backup get"
+echo "  velero backup describe my-k8s-backup"
